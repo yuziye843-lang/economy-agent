@@ -1,0 +1,7 @@
+[
+  {"order_id": "ORD1001", "user_id": "U001", "product": "无线蓝牙耳机", "status": "已完成", "amount": 199.0},
+  {"order_id": "ORD1002", "user_id": "U002", "product": "保温杯", "status": "配送中", "amount": 59.9},
+  {"order_id": "ORD1003", "user_id": "U003", "product": "运动鞋", "status": "已完成", "amount": 329.0},
+  {"order_id": "ORD1004", "user_id": "U004", "product": "台灯", "status": "已退款", "amount": 89.0},
+  {"order_id": "ORD1005", "user_id": "U005", "product": "行李箱", "status": "已完成", "amount": 499.0}
+]

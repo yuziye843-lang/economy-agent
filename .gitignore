@@ -1,0 +1,15 @@
+# 密钥（严禁提交）
+.env
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 原始源数据（运行时只读 reviews_3000.json，无需 11M 的 CSV）
+data/online_shopping_10_cats.csv
+
+# 本地工具
+.claude/
