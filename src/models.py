@@ -116,3 +116,24 @@ class CategoryReport(BaseModel):
     top_causes: list[str]
     typical_reviews: list[Review]
     advice: str
+
+
+class TitleSet(BaseModel):
+    """爆款标题三连：搜索流 / 情绪流 / 促销流。"""
+    search: str = Field(description="搜索流标题：堆砌品类与卖点关键词，利于搜索命中")
+    emotion: str = Field(description="情绪流标题：制造共鸣与身份认同")
+    promo: str = Field(description="促销流标题：突出优惠力度与紧迫感")
+
+
+class FaqItem(BaseModel):
+    """售前 FAQ 单条问答。"""
+    question: str = Field(description="买家高频提问")
+    answer: str = Field(description="高情商标准回复")
+
+
+class ListingPlan(BaseModel):
+    """售前选品上架的 4 块结构化成果。"""
+    titles: TitleSet = Field(description="黄金点击率标题")
+    detail_copy: str = Field(description="详情页吸睛文案（痛点→卖点→催促下单）")
+    faqs: list[FaqItem] = Field(description="3 条售前高频防踩坑 FAQ")
+    social_copy: str = Field(description="小红书种草引流文案，带 Emoji 与话题标签")

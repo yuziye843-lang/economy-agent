@@ -12,6 +12,7 @@ from src.dataset import load_reviews
 from src.graph import run
 from src.llm import LLM_AVAILABLE
 from src.models import Action, Complaint, Order
+from src.presales import PLATFORMS, generate_listing
 from src.report import build_category_report, build_report, classify_category
 from src.tools import query_order
 
@@ -149,7 +150,62 @@ def _render_result(result, product_category: str) -> None:
                 st.code(result.reply_text, language=None)
 
 
-tab_todo, tab_report = st.tabs(["📋 客诉待办工作台", "📊 诱因归因大盘"])
+tab_listing, tab_todo, tab_report = st.tabs([
+    "✨ 爆款上架与商品企划",
+    "📋 客诉待办工作台",
+    "📊 诱因归因大盘",
+])
+
+
+# ---------- 售前运营：爆款上架与商品企划 ----------
+with tab_listing:
+    st.subheader("✨ AI 智能选品与爆款上架助手")
+    st.caption("输入商品信息，一键生成「标题 / 详情页 / FAQ / 种草文案」四件套，打通售前运营闭环")
+
+    with st.form("listing_form"):
+        c1, c2 = st.columns(2)
+        with c1:
+            l_category = st.selectbox("商品品类", categories)
+            l_platform = st.selectbox("目标平台", PLATFORMS)
+        with c2:
+            l_pricing = st.text_input("定价策略", placeholder="如：9.9元引流 / 中端品质款")
+            l_points = st.text_area("核心特点 / 卖点", placeholder="如：真丝材质、透气、适合夏天、防紫外线")
+        if st.form_submit_button("🚀 生成爆款文案四件套", type="primary", use_container_width=True):
+            with st.spinner("DeepSeek 生成中……"):
+                plan = generate_listing(
+                    l_category,
+                    l_points.strip() or "品质优选",
+                    l_platform,
+                    l_pricing.strip() or "高性价比",
+                )
+            st.session_state.listing_result = (plan, l_category)
+
+    if st.session_state.get("listing_result"):
+        plan, lcat = st.session_state.listing_result
+
+        st.markdown('<div class="sec-title">① 黄金点击率标题 · 3 种风格</div>', unsafe_allow_html=True)
+        t1, t2, t3 = st.columns(3)
+        with t1:
+            st.markdown("**🔎 搜索流**")
+            st.code(plan.titles.search, language=None)
+        with t2:
+            st.markdown("**💗 情绪流**")
+            st.code(plan.titles.emotion, language=None)
+        with t3:
+            st.markdown("**🔥 促销流**")
+            st.code(plan.titles.promo, language=None)
+
+        st.markdown('<div class="sec-title">② 详情页吸睛文案（痛点→卖点→催单）</div>', unsafe_allow_html=True)
+        st.code(plan.detail_copy, language=None)
+
+        st.markdown('<div class="sec-title">③ 售前高频防踩坑 FAQ</div>', unsafe_allow_html=True)
+        for i, faq in enumerate(plan.faqs, 1):
+            with st.container(border=True):
+                st.markdown(f"**Q{i}：{faq.question}**")
+                st.code(faq.answer, language=None)
+
+        st.markdown('<div class="sec-title">④ 社交媒体种草引流文案（小红书模板）</div>', unsafe_allow_html=True)
+        st.code(plan.social_copy, language=None)
 
 
 # ---------- 待办工作台 ----------
