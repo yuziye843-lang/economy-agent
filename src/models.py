@@ -8,11 +8,13 @@ from pydantic import BaseModel, Field
 
 
 class Category(str, Enum):
-    """客诉/评价类别。"""
-    logistics = "物流"
-    quality = "品质"
-    service = "服务"
-    other = "其他"
+    """客诉/评价分类（6 大标准维度，与差评归因统一）。"""
+    quality = "商品品质"      # 破损、质量瑕疵、异味、变质、做工粗糙、功能故障
+    logistics = "物流配送"    # 时效慢、丢件、派送态度恶劣、未送货上门
+    packaging = "包装耗材"    # 外包装挤压变形、破损漏液、缺少防震泡沫
+    mismatch = "描述不符"     # 严重色差、尺码不准、版型不合、货不对板、虚假宣传
+    service = "履约服务"      # 客服不理人/推诿、漏发少发、降价不退差价、退换货受阻
+    other = "其他/主观偏好"   # 仅纯主观审美/情绪发泄，严格限制使用
 
 
 class Severity(str, Enum):
@@ -30,15 +32,6 @@ class Action(str, Enum):
     no_action = "无需处理"
     pending_approval = "待人工审批"
     high_risk = "高危拦截"
-
-
-class RootCause(str, Enum):
-    """客诉诱因（Root Cause）——差评大盘归因维度。"""
-    logistics = "物流配送"
-    quality = "商品品质"
-    service = "售后服务"
-    packaging = "包装破损"
-    other = "其他"
 
 
 class Review(BaseModel):
@@ -99,17 +92,17 @@ class AgentState(BaseModel):
     reply_text: Optional[str] = None
 
 
-class RootCauseStat(BaseModel):
-    """单个客诉诱因的统计。"""
-    cause: RootCause
+class CategoryStat(BaseModel):
+    """单个分类维度的统计（差评大盘归因）。"""
+    cause: Category
     count: int
     ratio: float = Field(ge=0, le=1)
 
 
 class NegativeReport(BaseModel):
-    """差评聚合报告（按客诉诱因归因）。"""
+    """差评聚合报告（按分类维度归因）。"""
     total: int
-    stats: list[RootCauseStat]
+    stats: list[CategoryStat]
     top_reviews: list[Review]
     advice: str
 

@@ -1,46 +1,92 @@
-"""差评聚合与客诉诱因归因报告。"""
+"""差评聚合与客诉分类归因报告。"""
 from __future__ import annotations
 
 from collections import Counter
 
 from .dataset import load_reviews
 from .llm import LLM_AVAILABLE, llm
-from .models import CategoryReport, NegativeReport, Review, RootCause, RootCauseStat
+from .models import Category, CategoryReport, CategoryStat, NegativeReport, Review
 
 NEGATIVE_THRESHOLD = 2  # rating <= 2 视为差评（本数据集中差评=1）
 
-_PACKAGING = ("包装", "破损", "摔", "压坏", "开裂", "碎了", "漏", "瘪", "挤压", "盒子", "外壳", "变形", "掉漆", "划痕")
-_LOGISTICS = ("物流", "快递", "配送", "发货", "延迟", "丢件", "没收到", "没到货", "不到货", "时效", "揽收", "送达", "送货", "催", "缺货", "发错", "漏发", "少发", "不发货", "没发货", "迟迟", "到货", "太慢", "很慢", "慢", "还没到", "还没收到")
-_SERVICE = ("客服", "态度", "售后", "不理", "敷衍", "退款", "退货", "换货", "回复", "投诉", "处理", "赔偿", "不处理", "联系", "发票", "沟通", "无人", "没人", "响应", "服务", "维修", "上门")
-_QUALITY = ("质量", "坏了", "瑕疵", "色差", "异味", "假货", "太假", "假的", "难吃", "口感", "做工", "掉毛", "褪色", "缩水", "起球", "不好", "太差", "很差", "垃圾", "失灵", "不能用", "尺寸", "偏小", "偏大", "面料", "失望", "不满意", "不如图", "描述不符", "太薄", "太厚", "太重", "太轻", "薄", "厚", "窄", "烂", "功能", "不支持", "无法", "分辨率", "内存", "电池", "模糊", "赠品", "劣质", "味道", "缺陷", "分区", "识别", "容量", "卡顿", "不甜", "太酸", "太硬", "太软", "不好用", "难用", "卫生", "灰尘", "霉味", "脏", "旧", "骗子", "没送", "驱动", "图片", "出入", "不适合", "没意义", "无聊", "缺页", "白纸", "隔音", "吵", "头皮屑", "拉链", "水分", "不能吃", "信号", "关机", "涩", "酸", "净重", "缺斤")
+# 6 大分类维度关键词库（与 models.Category 一一对应）。
+# 匹配优先级：包装耗材 → 描述不符 → 物流配送 → 履约服务 → 商品品质 → 其他（兜底）。
+_PACKAGING = (
+    "包装", "外包装", "盒子", "箱子", "纸箱", "泡沫", "防震", "缓冲",
+    "漏液", "漏了", "挤压", "压烂", "压坏", "压瘪", "瘪", "变形", "打包",
+)
+_MISMATCH = (
+    "色差", "尺码", "尺寸", "偏大", "偏小", "版型", "货不对板", "不如图",
+    "描述不符", "虚假宣传", "差别", "出入", "欺骗", "不实", "不符",
+    "短斤", "缺斤少两", "分量不足", "实物", "不一样",
+)
+_LOGISTICS = (
+    "物流", "快递", "配送", "发货", "延迟", "丢件", "没收到", "没到货",
+    "不到货", "时效", "揽收", "送达", "送货", "派送", "催", "不发货",
+    "没发货", "迟迟", "到货", "太慢", "很慢", "还没到", "还没收到",
+    "没有收到", "没有到", "没到", "慢",
+)
+_SERVICE = (
+    "客服", "态度", "售后", "不理", "敷衍", "退款", "退货", "换货",
+    "回复", "投诉", "处理", "赔偿", "赔付", "不处理", "联系", "发票",
+    "沟通", "无人", "没人", "响应", "服务", "维修", "上门", "安装",
+    "推诿", "扯皮", "漏发", "少发", "缺货", "发错", "没送", "赠品",
+    "差价", "降价", "价格保护", "价保", "秒杀", "优惠", "价格", "退房",
+    "贵", "返修",
+)
+_QUALITY = (
+    "质量", "破损", "摔", "碎了", "开裂", "裂开", "坏了", "瑕疵", "异味",
+    "变质", "做工", "粗糙", "功能", "故障", "失灵", "不能用", "难吃",
+    "口感", "掉毛", "褪色", "起球", "缩水", "太差", "很差", "垃圾",
+    "劣质", "缺陷", "卡顿", "分辨率", "内存", "电池", "信号", "关机",
+    "假货", "假", "蒙牛", "伊利", "塑化剂", "中毒", "过期", "三聚氰胺",
+    "有毒", "食品安全", "难用", "不好用", "太薄", "太厚", "太硬",
+    "太软", "太酸", "不甜", "卫生", "灰尘", "霉味", "脏", "旧", "骗子",
+    "缺页", "白纸", "隔音", "吵", "头皮屑", "拉链", "水分", "不能吃",
+    "涩", "酸", "净重", "缺斤", "差劲", "失望", "不满意", "太大", "太小",
+    # 书 / 内容
+    "书", "文笔", "情节", "作者", "内容", "看不懂", "看不下去", "看不下",
+    "无聊", "没意义", "没意思", "不值得", "不实用", "没用", "油墨", "印刷",
+    "纸质", "翻译", "错字", "错别字",
+    # 食品
+    "发苦", "发霉", "烂", "没熟", "不新鲜", "变味", "馊", "臭", "恶心",
+    "腥", "软绵绵", "发软", "太腻", "太油", "发酸",
+    # 通用缺陷
+    "死机", "卡", "发热", "发烫", "漏", "破", "二手", "翻新", "拆过",
+    "松动", "掉色", "掉漆", "脱线", "开线", "刺鼻", "难闻", "不干净", "硬",
+    "蓝屏", "重启", "长毛", "正品", "掉发", "头屑", "痒", "不清晰", "不稳定",
+    "不值", "性价比", "不方便",
+)
 
 
-def classify_root_cause(content: str) -> RootCause:
-    """基于关键词规则识别差评的客诉诱因（全量快速归因）。"""
+def classify_category(content: str) -> Category:
+    """基于关键词规则识别差评的分类维度（全量快速归因）。"""
     text = content
     if any(k in text for k in _PACKAGING):
-        return RootCause.packaging
+        return Category.packaging
+    if any(k in text for k in _MISMATCH):
+        return Category.mismatch
     if any(k in text for k in _LOGISTICS):
-        return RootCause.logistics
+        return Category.logistics
     if any(k in text for k in _SERVICE):
-        return RootCause.service
+        return Category.service
     if any(k in text for k in _QUALITY):
-        return RootCause.quality
-    return RootCause.other
+        return Category.quality
+    return Category.other
 
 
 def build_report(reviews: list[Review] | None = None) -> NegativeReport:
     reviews = reviews if reviews is not None else load_reviews()
     negative = [r for r in reviews if r.rating <= NEGATIVE_THRESHOLD]
 
-    counts: dict[RootCause, int] = {}
+    counts: dict[Category, int] = {}
     for r in negative:
-        cause = classify_root_cause(r.content)
+        cause = classify_category(r.content)
         counts[cause] = counts.get(cause, 0) + 1
 
     total = len(negative)
     stats = [
-        RootCauseStat(cause=c, count=n, ratio=round(n / total, 4) if total else 0.0)
+        CategoryStat(cause=c, count=n, ratio=round(n / total, 4) if total else 0.0)
         for c, n in sorted(counts.items(), key=lambda x: -x[1])
     ]
     top_reviews = sorted(negative, key=lambda r: r.rating)[:5]
@@ -49,7 +95,7 @@ def build_report(reviews: list[Review] | None = None) -> NegativeReport:
     return NegativeReport(total=total, stats=stats, top_reviews=top_reviews, advice=advice)
 
 
-def _generate_advice(stats: list[RootCauseStat], negative: list[Review], total: int) -> str:
+def _generate_advice(stats: list[CategoryStat], negative: list[Review], total: int) -> str:
     if not negative:
         return "本期无差评，运营状态良好。"
     if LLM_AVAILABLE:
@@ -60,24 +106,25 @@ def _generate_advice(stats: list[RootCauseStat], negative: list[Review], total: 
     return _generate_advice_rule(stats, negative, total)
 
 
-def _generate_advice_llm(stats: list[RootCauseStat], negative: list[Review], total: int) -> str:
+def _generate_advice_llm(stats: list[CategoryStat], negative: list[Review], total: int) -> str:
     distribution = "；".join(f"{s.cause.value} {s.count} 条（{s.ratio:.0%}）" for s in stats)
     samples = "\n".join(f"- {r.content[:50]}" for r in negative[:10])
     prompt = (
-        "你是电商运营负责人。根据以下差评的客诉诱因分布与代表样本，输出《经营决策改善建议》："
-        "针对运营主管的 3~5 条可执行行动指南，结合具体诱因提出可落地的改进措施，200 字以内，直接输出建议正文。\n"
-        f"差评总数：{total}\n诱因分布：{distribution}\n代表差评：\n{samples}"
+        "你是电商运营负责人。根据以下差评的分类维度分布与代表样本，输出《经营决策改善建议》："
+        "针对运营主管的 3~5 条可执行行动指南，结合具体维度提出可落地的改进措施，200 字以内，直接输出建议正文。\n"
+        f"差评总数：{total}\n维度分布：{distribution}\n代表差评：\n{samples}"
     )
     return llm.invoke(prompt).content.strip()
 
 
-def _generate_advice_rule(stats: list[RootCauseStat], negative: list[Review], total: int) -> str:
+def _generate_advice_rule(stats: list[CategoryStat], negative: list[Review], total: int) -> str:
     tips = {
-        RootCause.logistics: "建议核查合作物流时效与破损率，对高延迟线路考虑切换承运商或增加时效承诺。",
-        RootCause.quality: "建议加强来料质检与供应商抽检，对问题批次启动下架或召回。",
-        RootCause.service: "建议补充售后客服排班与话术培训，缩短响应时长并优化退换货流程。",
-        RootCause.packaging: "建议升级打包耗材（缓冲材/冷链保温），对易碎易腐商品增加加固。",
-        RootCause.other: "建议对高频模糊诉求建立人工复核通道。",
+        Category.logistics: "建议核查合作物流时效与破损率，对高延迟线路考虑切换承运商或增加时效承诺。",
+        Category.quality: "建议加强来料质检与供应商抽检，对问题批次启动下架或召回。",
+        Category.packaging: "建议升级打包耗材（缓冲材/防震/冷链保温），对易碎易腐商品增加加固。",
+        Category.mismatch: "建议复核商品详情页与实物一致性，规范尺码/色差描述，杜绝虚假宣传。",
+        Category.service: "建议补充客服排班与话术培训，建立价保与漏发快速赔付通道，缩短退换货周期。",
+        Category.other: "建议对纯主观/情绪类评价单独归类，避免干扰客观归因。",
     }
     top = stats[0]
     parts = [f"本期共 {total} 条差评。"]
@@ -89,11 +136,11 @@ def _generate_advice_rule(stats: list[RootCauseStat], negative: list[Review], to
 # ---------- 品类专项下钻 ----------
 
 def build_category_report(reviews: list[Review], category: str) -> CategoryReport:
-    """单品类专项报告：体检指标 + 高频诱因 + 典型差评 + AI 诊断建议。"""
+    """单品类专项报告：体检指标 + 高频维度 + 典型差评 + AI 诊断建议。"""
     cat_reviews = [r for r in reviews if r.category == category]
     negative = [r for r in cat_reviews if r.rating <= NEGATIVE_THRESHOLD]
 
-    cause_counts = Counter(classify_root_cause(r.content) for r in negative)
+    cause_counts = Counter(classify_category(r.content) for r in negative)
     top_causes = [c.value for c, _ in cause_counts.most_common(3)]
 
     # 典型差评：评分最低优先，同分取字数较长者

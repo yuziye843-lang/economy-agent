@@ -11,8 +11,9 @@ import streamlit as st
 from src.dataset import load_reviews
 from src.graph import run
 from src.llm import LLM_AVAILABLE
-from src.models import Action, Complaint
-from src.report import build_category_report, build_report, classify_root_cause
+from src.models import Action, Complaint, Order
+from src.report import build_category_report, build_report, classify_category
+from src.tools import query_order
 
 st.set_page_config(page_title="电商客诉运营驾驶舱", page_icon="🛒", layout="wide")
 
@@ -55,9 +56,9 @@ def _tag(text: str, color: str) -> str:
 
 
 _SEVERITY_COLOR = {"低": "#12b76a", "中": "#f79009", "高": "#f04438"}
-_ROOTCAUSE_COLOR = {
-    "物流配送": "#1570ef", "商品品质": "#7a5af8", "售后服务": "#f79009",
-    "包装破损": "#f04438", "其他": "#667085",
+_CATEGORY_COLOR = {
+    "商品品质": "#7a5af8", "物流配送": "#1570ef", "包装耗材": "#f04438",
+    "描述不符": "#f79009", "履约服务": "#12b76a", "其他/主观偏好": "#667085",
 }
 
 
@@ -75,6 +76,7 @@ st.session_state.setdefault("last_result", None)
 
 reviews = _load_reviews()
 todo_pool = [r for r in reviews if r.rating <= 2]  # 差评待办池
+categories = sorted({r.category for r in reviews})
 
 
 def _record(result) -> None:
@@ -115,10 +117,10 @@ def _render_result(result, product_category: str) -> None:
 
     with c1:
         st.markdown('<div class="sec-title">① 语义理解</div>', unsafe_allow_html=True)
-        cause = classify_root_cause(result.complaint.content)
+        cause = classify_category(result.complaint.content)
         st.markdown(
             _tag(f"品类 · {product_category}", "#344054")
-            + _tag(f"诱因 · {cause.value}", _ROOTCAUSE_COLOR[cause.value])
+            + _tag(f"诱因 · {cause.value}", _CATEGORY_COLOR[cause.value])
             + _tag(f"风险 · {result.classification.severity.value}度", _SEVERITY_COLOR[result.classification.severity.value]),
             unsafe_allow_html=True,
         )
@@ -192,13 +194,30 @@ with tab_todo:
 
     with st.expander("✍️ 自定义测试输入（针对极端客诉边界测试）"):
         with st.form("custom_form"):
+            c_category = st.selectbox("商品品类（用于 Mock 订单绑定）", categories)
             c_content = st.text_area("客诉内容", "快递把包裹摔坏了，外壳裂开，客服一直不回复，要求赔偿！")
-            c_order = st.text_input("订单号", "ORD99999")
-            if st.form_submit_button("运行自定义客诉"):
+            c_order = st.text_input(
+                "订单号",
+                "",
+                placeholder="留空或填写不存在的单号，将自动 Mock 一个有效订单（100~300 元，已完成）",
+            )
+            if st.form_submit_button("🚀 运行自定义客诉"):
+                order = query_order(c_order) if c_order.strip() else None
+                if order is None:
+                    order = Order(
+                        order_id=c_order.strip() or "ORD_MOCK_0001",
+                        user_id="CUSTOM",
+                        product=c_category,
+                        status="已完成",
+                        amount=round(random.uniform(100, 300), 2),
+                    )
                 with st.spinner("Agent 处理中……"):
-                    result = run(Complaint(user_id="CUSTOM", order_id=c_order, content=c_content))
+                    result = run(
+                        Complaint(user_id="CUSTOM", order_id=order.order_id, content=c_content),
+                        order=order,
+                    )
                 _record(result)
-                st.session_state.last_result = (result, "自定义")
+                st.session_state.last_result = (result, c_category)
                 st.rerun()
 
 
@@ -223,7 +242,7 @@ with tab_report:
                         theta=alt.Theta("数量:Q", stack=True),
                         color=alt.Color(
                             "诱因:N",
-                            scale=alt.Scale(domain=list(_ROOTCAUSE_COLOR), range=list(_ROOTCAUSE_COLOR.values())),
+                            scale=alt.Scale(domain=list(_CATEGORY_COLOR), range=list(_CATEGORY_COLOR.values())),
                             legend=None,
                         ),
                         tooltip=["诱因", "数量"],
@@ -241,7 +260,7 @@ with tab_report:
                         y=alt.Y("诱因:N", sort="-x"),
                         color=alt.Color(
                             "诱因:N",
-                            scale=alt.Scale(domain=list(_ROOTCAUSE_COLOR), range=list(_ROOTCAUSE_COLOR.values())),
+                            scale=alt.Scale(domain=list(_CATEGORY_COLOR), range=list(_CATEGORY_COLOR.values())),
                             legend=None,
                         ),
                         tooltip=["诱因", "数量"],
@@ -255,7 +274,6 @@ with tab_report:
 
     # 品类专项下钻
     st.subheader("🔍 品类专项下钻分析")
-    categories = sorted({r.category for r in reviews})
     selected = st.selectbox("选择品类", categories)
     cat = build_category_report(reviews, selected)
 
@@ -267,7 +285,7 @@ with tab_report:
     st.markdown('<div class="sec-title">高频痛点标签</div>', unsafe_allow_html=True)
     if cat.top_causes:
         st.markdown(
-            "".join(_tag(c, _ROOTCAUSE_COLOR.get(c, "#667085")) for c in cat.top_causes),
+            "".join(_tag(c, _CATEGORY_COLOR.get(c, "#667085")) for c in cat.top_causes),
             unsafe_allow_html=True,
         )
     else:

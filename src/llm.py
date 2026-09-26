@@ -18,7 +18,7 @@ def build_llm():
         model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
         base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
         api_key=os.getenv("DEEPSEEK_API_KEY", "no-key"),
-        temperature=0,
+        temperature=0.6,
     )
 
 
