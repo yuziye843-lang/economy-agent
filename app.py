@@ -47,6 +47,17 @@ div[data-testid="stMetric"] {
     border: 1px solid #fde68a; border-radius: 12px;
     padding: 16px 18px; color: #92400e; line-height: 1.8; font-size: 0.95rem;
 }
+.coupon-card {
+    background: linear-gradient(135deg,#fff0f6,#ffe0ec);
+    border: 1px dashed #f06595; border-radius: 12px;
+    padding: 18px 20px; color: #c2255c; text-align: center; margin: 8px 0;
+}
+.coupon-amount { font-size: 2rem; font-weight: 800; color: #e64980; }
+.green-card {
+    background: linear-gradient(135deg,#ebfbee,#d3f9d8);
+    border: 1px solid #69db7c; border-radius: 12px;
+    padding: 16px 18px; color: #2b8a3e; line-height: 1.7;
+}
 </style>
 """
 st.markdown(_CSS, unsafe_allow_html=True)
@@ -73,19 +84,12 @@ st.session_state.setdefault("processed", 0)
 st.session_state.setdefault("recovered", 0)
 st.session_state.setdefault("payout", 0.0)
 st.session_state.setdefault("last_result", None)
+st.session_state.setdefault("flash", None)
 
 
 reviews = _load_reviews()
 todo_pool = [r for r in reviews if r.rating <= 2]  # 差评待办池
 categories = sorted({r.category for r in reviews})
-
-
-def _record(result) -> None:
-    st.session_state.processed += 1
-    if result.decision and result.decision.action in (Action.send_coupon, Action.manual):
-        st.session_state.recovered += 1
-    if result.decision and result.decision.action == Action.send_coupon:
-        st.session_state.payout += result.decision.coupon_amount or 0.0
 
 
 # ---------- 头部指标 ----------
@@ -104,6 +108,10 @@ m2.metric(
 )
 m3.metric("自动赔付总额", f"¥{st.session_state.payout:.0f}")
 st.divider()
+
+if st.session_state.flash:
+    st.success(st.session_state.flash)
+    st.session_state.flash = None
 
 
 def _render_result(result, product_category: str) -> None:
@@ -148,6 +156,69 @@ def _render_result(result, product_category: str) -> None:
             )
             with st.expander("📋 一键复制回复"):
                 st.code(result.reply_text, language=None)
+
+
+def _render_buyer_card(result) -> None:
+    """C端买家服务动线与履约卡片：客服安抚 + 按决策分支的履约动作与闭环。"""
+    st.markdown('<div class="sec-title">📱 C端买家服务动线与履约卡片</div>', unsafe_allow_html=True)
+    with st.container(border=True):
+        st.markdown("**💬 客服安抚回复（买家视角）**")
+        if result.reply_text:
+            st.markdown(
+                f'<div class="bubble">{html.escape(result.reply_text)}</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.caption("（暂无回复文案）")
+
+        decision = result.decision
+        action = decision.action if decision else None
+
+        if action == Action.send_coupon:
+            amount = decision.coupon_amount or 0.0
+            st.markdown("**🎟️ 专属心意补偿券**")
+            st.markdown(
+                '<div class="coupon-card">'
+                '<div style="font-size:0.85rem;">专属心意补偿券</div>'
+                f'<div class="coupon-amount">¥{amount:.2f}</div>'
+                '<div style="font-size:0.8rem;">感谢您的理解与支持</div>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+            if st.button("✅ 买家接受方案并修改好评", type="primary", use_container_width=True):
+                st.session_state.processed += 1
+                st.session_state.recovered += 1
+                st.session_state.payout += amount
+                st.session_state.flash = "🎉 买家已接受补偿方案，历史评价已自动更新为 5 星好评，客诉挽回成功！"
+                st.session_state.last_result = None
+                st.rerun()
+
+        elif action in (Action.high_risk, Action.escalate_alert):
+            st.markdown("**🚨 极速售后保障绿色通道**")
+            st.markdown(
+                '<div class="green-card">'
+                '已为您开启绿色通道，专员将加急核实并协助办理售后；'
+                '若符合退款条件可一键极速退款，款项原路退回。'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+            if st.button("⚡ 申请极速退款", type="primary", use_container_width=True):
+                st.session_state.processed += 1
+                st.session_state.flash = "已为您开启极速退款，款项已原路退回，专员将跟进关怀。"
+                st.session_state.last_result = None
+                st.rerun()
+
+        elif action == Action.pending_approval:
+            st.markdown("**⏳ 补偿方案待人工审批**")
+            st.info(f"建议补偿 ¥{decision.coupon_amount or 0:.0f} 已提交审批，专员将在 1 小时内联系您。")
+
+        elif action == Action.manual:
+            st.markdown("**👤 已转人工处理**")
+            st.info("已安排人工客服一对一跟进，专员将在 1 小时内电话联系您。")
+
+        else:
+            st.markdown("**✅ 处理完成**")
+            st.caption("感谢您的反馈，我们会持续改进。")
 
 
 tab_listing, tab_todo, tab_report = st.tabs([
@@ -253,7 +324,6 @@ with tab_todo:
                 result = run(
                     Complaint(user_id=review.user_id, order_id=review.order_id, content=review.content)
                 )
-            _record(result)
             st.session_state.last_result = (result, review.category)
             st.rerun()
 
@@ -261,6 +331,7 @@ with tab_todo:
         result, cat = st.session_state.last_result
         st.divider()
         _render_result(result, cat)
+        _render_buyer_card(result)
 
     with st.expander("✍️ 自定义测试输入（针对极端客诉边界测试）"):
         with st.form("custom_form"):
@@ -286,7 +357,6 @@ with tab_todo:
                         Complaint(user_id="CUSTOM", order_id=order.order_id, content=c_content),
                         order=order,
                     )
-                _record(result)
                 st.session_state.last_result = (result, c_category)
                 st.rerun()
 
