@@ -137,3 +137,9 @@ class ListingPlan(BaseModel):
     detail_copy: str = Field(description="结构化吸睛详情页文案")
     faqs: list[FaqItem] = Field(description="3 组售前高频拦截 FAQ")
     tags: list[str] = Field(description="6~10 个去重的圈内真实高频搜索词")
+
+
+class Benchmark(BaseModel):
+    """全网对标参考条目（标题 + 摘要），仅供风格与高频词借鉴，不参与事实拼接。"""
+    title: str
+    body: str

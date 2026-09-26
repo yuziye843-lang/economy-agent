@@ -11,8 +11,8 @@ import streamlit as st
 from src.dataset import load_reviews
 from src.graph import run
 from src.llm import LLM_AVAILABLE
-from src.models import Action, Complaint, Order
-from src.presales import CATEGORIES, PLATFORMS, generate_listing
+from src.models import Action, Benchmark, Complaint, Order
+from src.presales import CATEGORIES, PLATFORMS, generate_listing, search_market_benchmarks
 from src.report import build_category_report, build_report, classify_category
 from src.tools import query_order
 
@@ -181,7 +181,18 @@ with tab_listing:
             placeholder="真实划痕、泛黄、折痕、缺配件等，诚信告知（选填，强烈建议如实填写）",
         )
 
+        enable_search = st.checkbox(
+            "🌐 开启 Agent 全网实时对标检索（调用外部搜索工具捕获最新热词）",
+            value=False,
+        )
+
         if st.form_submit_button("🚀 生成爆款文案四件套", type="primary", use_container_width=True):
+            benchmarks: list[Benchmark] = []
+            if enable_search:
+                with st.spinner("🔍 Agent 正在全网检索同类爆款与高频标签..."):
+                    benchmarks = search_market_benchmarks(
+                        l_facts.strip() or l_category, l_category, l_platform
+                    )
             with st.spinner("DeepSeek 生成中……"):
                 plan = generate_listing(
                     l_category,
@@ -189,11 +200,21 @@ with tab_listing:
                     l_pricing.strip() or "诚意价",
                     l_facts.strip(),
                     l_flaws.strip(),
+                    benchmarks,
                 )
-            st.session_state.listing_result = (plan, l_category)
+            st.session_state.listing_result = (plan, l_category, benchmarks, enable_search)
 
     if st.session_state.get("listing_result"):
-        plan, lcat = st.session_state.listing_result
+        plan, lcat, benchmarks, searched = st.session_state.listing_result
+
+        if searched:
+            if benchmarks:
+                with st.expander("🌐 Agent 实时抓取到的全网对标参考 (Top 3)"):
+                    for i, b in enumerate(benchmarks, 1):
+                        st.markdown(f"**{i}. {b.title}**")
+                        st.caption(b.body)
+            else:
+                st.info("ℹ️ 外部网络检索已平滑降级，已为您自动启用内置顶尖卖家转化模型")
 
         st.markdown('<div class="sec-title">① 爆款高点击标题 · 3 款</div>', unsafe_allow_html=True)
         t1, t2, t3 = st.columns(3)

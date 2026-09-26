@@ -1,10 +1,10 @@
-"""售前运营模块：全品类普适型爆款上架与高权重标签检索助手。"""
+"""售前运营模块：全品类普适型爆款上架与高权重标签检索助手（可选联网对标）。"""
 from __future__ import annotations
 
 import logging
 
 from .llm import llm
-from .models import FaqItem, ListingPlan, TitleSet
+from .models import Benchmark, FaqItem, ListingPlan, TitleSet
 
 logger = logging.getLogger("presales")
 
@@ -30,31 +30,65 @@ _CATEGORY_FRAMEWORKS = {
 }
 
 
+def search_market_benchmarks(keyword: str, category: str, platform: str = "闲鱼") -> list[Benchmark]:
+    """全网对标检索：自动生成垂直搜索词，4 秒超时 + 全异常静默降级，失败返回空列表。"""
+    query = f"{keyword} {category} {platform} 爆款 文案 穿搭"
+    try:
+        from duckduckgo_search import DDGS  # 延迟导入：未安装/网络异常时静默降级
+        ddgs = DDGS(timeout=4)
+        raw = ddgs.text(query, max_results=3)
+    except Exception as exc:
+        logger.warning("全网对标检索已平滑降级：%s", exc)
+        return []
+
+    out: list[Benchmark] = []
+    for r in raw:
+        title = (r.get("title") or "").strip()
+        body = (r.get("body") or "").strip()
+        if title or body:
+            out.append(Benchmark(title=title, body=body))
+    return out[:3]
+
+
 def generate_listing(
-    category: str, platform: str, pricing: str, facts: str, flaws: str = ""
+    category: str,
+    platform: str,
+    pricing: str,
+    facts: str,
+    flaws: str = "",
+    benchmarks: list[Benchmark] | None = None,
 ) -> ListingPlan:
     """生成爆款上架的 4 块结构化成果；无 DeepSeek 时降级为规则模板兜底。"""
+    benchmarks = benchmarks or []
     if llm:
         try:
-            return _generate_llm(category, platform, pricing, facts, flaws)
+            return _generate_llm(category, platform, pricing, facts, flaws, benchmarks)
         except Exception as exc:
             logger.warning("售前文案 LLM 生成失败，降级为规则模板：%s", exc)
     return _generate_rule(category, platform, pricing, facts, flaws)
 
 
-def _generate_llm(category: str, platform: str, pricing: str, facts: str, flaws: str) -> ListingPlan:
+def _generate_llm(category: str, platform: str, pricing: str, facts: str, flaws: str, benchmarks: list[Benchmark]) -> ListingPlan:
     structured = llm.with_structured_output(ListingPlan, method="function_calling")
     framework = _CATEGORY_FRAMEWORKS.get(category, "通用范式：如实呈现商品事实、成色与瑕疵")
+
+    bench_section = ""
+    if benchmarks:
+        lines = "\n".join(f"- {b.title}｜{b.body[:60]}" for b in benchmarks)
+        bench_section = f"【全网对标参考（仅供排版结构/促单语气/高频标签借鉴）】\n{lines}\n"
+
     prompt = (
         "你是资深电商爆款上架与标签检索专家。请基于用户提供的客观事实，输出 4 块结构化成果。\n"
         f"【品类爆款范式】{framework}。\n"
-        "【严格去幻觉】只使用用户提供的客观事实进行结构化与网感润色；严禁虚构任何用户未提及的"
-        "配置、电池寿命、尺寸、保修、成色、版本、渠道、配件等；若某信息未知，一律不写、不猜测。\n"
-        "① titles：3 款爆款高点击标题——search=搜索型（堆品类/型号/成色等关键词，利于搜索命中）、"
-        "transfer=诚心转让型（突出真实来源与诚信，如自用转手）、vibe=氛围型（营造使用场景与情绪氛围），每个标题 25 字以内。\n"
+        f"{bench_section}"
+        "【严格去幻觉（最高安全死命令）】网络对标结果仅供参考其排版结构、促单语气和高频标签；"
+        "商品的所有真实事实（尺码数值、瑕疵位置、成色、售价）必须 100% 严格来源于用户的原始输入，"
+        "严禁将检索到的外部尺码/价格拼接到输出中！\n"
+        "① titles：3 款爆款高点击标题——search=搜索型（堆品类/型号/成色关键词）、"
+        "transfer=诚心转让型（突出真实来源与诚信）、vibe=氛围型（营造使用场景与情绪氛围），每个标题 25 字以内。\n"
         "② detail_copy：结构化吸睛详情页文案，按「核心事实 → 亮点/场景 → 诚信说明(含瑕疵) → 催促下单」组织，180 字左右，一段正文。\n"
         "③ faqs：售前高频拦截 FAQ，写 3 组买家最常问的问题与高情商回复，针对该品类真实痛点，每条回答 60 字以内。\n"
-        "④ tags：精选 6~10 个去重的圈内真实高频搜索词（SEO 流量抓手），贴合品类与商品特性，输出为短语列表。\n"
+        "④ tags：精选 6~10 个去重的圈内真实高频搜索词（SEO 流量抓手），输出为短语列表。\n"
         f"商品品类：{category}\n目标平台：{platform}\n期望售价/定价：{pricing}\n"
         f"商品核心事实与规格：{facts or '（未提供）'}\n真实瑕疵与特殊说明：{flaws or '无'}\n"
     )

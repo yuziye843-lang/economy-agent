@@ -5,3 +5,4 @@ streamlit>=1.36.0
 python-dotenv>=1.0.1
 altair>=5.0.0
 pandas>=2.0.0
+duckduckgo_search>=6.0.0
