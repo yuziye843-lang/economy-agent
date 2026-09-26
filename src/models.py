@@ -134,6 +134,6 @@ class FaqItem(BaseModel):
 class ListingPlan(BaseModel):
     """售前选品上架的 4 块结构化成果。"""
     titles: TitleSet = Field(description="3 款爆款高点击标题")
-    detail_copy: str = Field(description="结构化详情页文案（Markdown 分模块排版：小标题+列表分行+空行）")
+    detail_copy: str = Field(description="结构化详情页文案（纯文本：中文【】分段+空行+破折号/点号列表，无 Markdown/Emoji）")
     faqs: list[FaqItem] = Field(description="3 组售前高频拦截 FAQ")
     tags: list[str] = Field(description="6~10 个去重的圈内真实高频搜索词")
