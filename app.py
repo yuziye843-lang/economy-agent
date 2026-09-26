@@ -15,7 +15,7 @@ from src.models import Action, Complaint, Order
 from src.report import build_category_report, build_report, classify_category
 from src.tools import query_order
 
-st.set_page_config(page_title="电商客诉运营驾驶舱", page_icon="🛒", layout="wide")
+st.set_page_config(page_title="基于 Agent 的电商客户体验 智能决策与风控运营平台", page_icon="🛒", layout="wide")
 
 _CSS = """
 <style>
@@ -88,7 +88,7 @@ def _record(result) -> None:
 
 
 # ---------- 头部指标 ----------
-st.title("🛒 电商客诉运营驾驶舱")
+st.title("🛒 基于 Agent 的电商客户体验 智能决策与风控运营平台")
 st.caption(
     "LangGraph 客诉决策 Agent —— "
     + ("已连接 DeepSeek" if LLM_AVAILABLE else "规则引擎降级模式")
