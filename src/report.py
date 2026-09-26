@@ -7,6 +7,14 @@ from .dataset import load_reviews
 from .llm import LLM_AVAILABLE, llm
 from .models import Category, CategoryReport, CategoryStat, NegativeReport, Review
 
+# 明确对外契约：app.py / graph.py 依赖的公开接口（排查“无法导入”时的白名单）。
+__all__ = [
+    "classify_category",
+    "build_report",
+    "build_category_report",
+    "NEGATIVE_THRESHOLD",
+]
+
 NEGATIVE_THRESHOLD = 2  # rating <= 2 视为差评（本数据集中差评=1）
 
 # 6 大分类维度关键词库（与 models.Category 一一对应）。
