@@ -119,10 +119,10 @@ class CategoryReport(BaseModel):
 
 
 class TitleSet(BaseModel):
-    """爆款标题三连：搜索流 / 情绪流 / 促销流。"""
-    search: str = Field(description="搜索流标题：堆砌品类与卖点关键词，利于搜索命中")
-    emotion: str = Field(description="情绪流标题：制造共鸣与身份认同")
-    promo: str = Field(description="促销流标题：突出优惠力度与紧迫感")
+    """爆款标题三连：搜索型 / 诚心转让型 / 氛围型。"""
+    search: str = Field(description="搜索型标题：堆品类/型号/成色等关键词，利于搜索命中")
+    transfer: str = Field(description="诚心转让型标题：突出真实来源与诚信，如自用转手")
+    vibe: str = Field(description="氛围型标题：营造使用场景与情绪氛围")
 
 
 class FaqItem(BaseModel):
@@ -133,7 +133,7 @@ class FaqItem(BaseModel):
 
 class ListingPlan(BaseModel):
     """售前选品上架的 4 块结构化成果。"""
-    titles: TitleSet = Field(description="黄金点击率标题")
-    detail_copy: str = Field(description="详情页吸睛文案（痛点→卖点→催促下单）")
-    faqs: list[FaqItem] = Field(description="3 条售前高频防踩坑 FAQ")
-    social_copy: str = Field(description="小红书种草引流文案，带 Emoji 与话题标签")
+    titles: TitleSet = Field(description="3 款爆款高点击标题")
+    detail_copy: str = Field(description="结构化吸睛详情页文案")
+    faqs: list[FaqItem] = Field(description="3 组售前高频拦截 FAQ")
+    tags: list[str] = Field(description="6~10 个去重的圈内真实高频搜索词")
