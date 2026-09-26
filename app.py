@@ -11,8 +11,8 @@ import streamlit as st
 from src.dataset import load_reviews
 from src.graph import run
 from src.llm import LLM_AVAILABLE
-from src.models import Action, Benchmark, Complaint, Order
-from src.presales import CATEGORIES, PLATFORMS, generate_listing, search_market_benchmarks
+from src.models import Action, Complaint, Order
+from src.presales import generate_listing
 from src.report import build_category_report, build_report, classify_category
 from src.tools import query_order
 
@@ -160,61 +160,38 @@ tab_listing, tab_todo, tab_report = st.tabs([
 # ---------- 售前运营：爆款上架与商品企划 ----------
 with tab_listing:
     st.subheader("✨ AI 智能选品与爆款上架助手")
-    st.caption("全品类通用：输入客观事实，一键生成「标题 / 详情页 / FAQ / 检索标签」四件套")
+    st.caption("同行结构克隆 + 反偷懒排版：输入真实档案，一键生成强结构化上架文案")
 
     with st.form("listing_form"):
-        st.markdown("**第一步 · 品类与平台选择**")
-        c1, c2 = st.columns(2)
-        with c1:
-            l_category = st.selectbox("商品品类", CATEGORIES)
-        with c2:
-            l_platform = st.selectbox("售卖平台", PLATFORMS)
-        l_pricing = st.text_input("期望售价 / 定价方式", placeholder="如：85包邮、可小刀、拍下立减")
-
-        st.markdown("**第二步 · 客观事实输入（极简普适）**")
+        st.markdown("**输入区 A · 我的商品真实档案（必填）**")
         l_facts = st.text_area(
-            "商品核心事实与规格",
-            placeholder="填写品牌、型号、配置、版型、成色、尺码等客观事实（多行）",
+            "商品事实与版型",
+            placeholder="如：白二本夏服、肩宽胸围、可拆卸领等",
         )
         l_flaws = st.text_area(
-            "真实瑕疵与特殊说明",
-            placeholder="真实划痕、泛黄、折痕、缺配件等，诚信告知（选填，强烈建议如实填写）",
+            "真实瑕疵与成色说明",
+            placeholder="如：压痕需自熨、胸挡色差、袖口泛黄等",
+        )
+        l_price = st.text_input("价格与交易方式", placeholder="如：85包邮、可直拍")
+
+        st.markdown("**输入区 B · 同行爆款参考文案（选填）**")
+        l_reference = st.text_area(
+            "📋 粘贴一条卖得很好的同行爆款文案（供 AI 提取排版小标题、Emoji 风格与促单句式）",
+            placeholder="（选填）粘贴同行文案，AI 将克隆其排版骨架；留空则套用高粉卖家标准分模块模板",
         )
 
-        enable_search = st.checkbox(
-            "🌐 开启 Agent 全网实时对标检索（调用外部搜索工具捕获最新热词）",
-            value=False,
-        )
-
-        if st.form_submit_button("🚀 生成爆款文案四件套", type="primary", use_container_width=True):
-            benchmarks: list[Benchmark] = []
-            if enable_search:
-                with st.spinner("🔍 Agent 正在全网检索同类爆款与高频标签..."):
-                    benchmarks = search_market_benchmarks(
-                        l_facts.strip() or l_category, l_category, l_platform
-                    )
-            with st.spinner("DeepSeek 生成中……"):
+        if st.form_submit_button("🚀 生成结构化上架文案", type="primary", use_container_width=True):
+            with st.spinner("DeepSeek 结构化重构中……"):
                 plan = generate_listing(
-                    l_category,
-                    l_platform,
-                    l_pricing.strip() or "诚意价",
                     l_facts.strip(),
                     l_flaws.strip(),
-                    benchmarks,
+                    l_price.strip() or "诚意价",
+                    l_reference.strip(),
                 )
-            st.session_state.listing_result = (plan, l_category, benchmarks, enable_search)
+            st.session_state.listing_result = plan
 
     if st.session_state.get("listing_result"):
-        plan, lcat, benchmarks, searched = st.session_state.listing_result
-
-        if searched:
-            if benchmarks:
-                with st.expander("🌐 Agent 实时抓取到的全网对标参考 (Top 3)"):
-                    for i, b in enumerate(benchmarks, 1):
-                        st.markdown(f"**{i}. {b.title}**")
-                        st.caption(b.body)
-            else:
-                st.info("ℹ️ 外部网络检索已平滑降级，已为您自动启用内置顶尖卖家转化模型")
+        plan = st.session_state.listing_result
 
         st.markdown('<div class="sec-title">① 爆款高点击标题 · 3 款</div>', unsafe_allow_html=True)
         t1, t2, t3 = st.columns(3)
@@ -228,8 +205,11 @@ with tab_listing:
             st.markdown("**✨ 氛围型**")
             st.code(plan.titles.vibe, language=None)
 
-        st.markdown('<div class="sec-title">② 结构化吸睛详情页文案</div>', unsafe_allow_html=True)
-        st.code(plan.detail_copy, language=None)
+        st.markdown('<div class="sec-title">② 结构化详情页文案</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown(plan.detail_copy)
+        with st.expander("📋 一键复制文案"):
+            st.code(plan.detail_copy, language=None)
 
         st.markdown('<div class="sec-title">③ 售前高频拦截 FAQ</div>', unsafe_allow_html=True)
         for i, faq in enumerate(plan.faqs, 1):

@@ -1,131 +1,112 @@
-"""售前运营模块：全品类普适型爆款上架与高权重标签检索助手（可选联网对标）。"""
+"""售前运营模块：同行结构克隆与反偷懒排版重构的上架助手。"""
 from __future__ import annotations
 
 import logging
 
 from .llm import llm
-from .models import Benchmark, FaqItem, ListingPlan, TitleSet
+from .models import FaqItem, ListingPlan, TitleSet
 
 logger = logging.getLogger("presales")
 
-CATEGORIES = (
-    "3C数码",
-    "服饰鞋包",
-    "潮玩二次元/非标周边",
-    "图书教材/学术资料",
-    "美妆个护",
-    "家居日用/其他",
+# 高粉卖家标准分模块模板（用户未提供同行参考文案时强制套用）。
+_STANDARD_TEMPLATE = (
+    "【📐 尺寸档案】→【👗 实穿亮点】→【🔍 瑕疵诚信告知】→【⚠️ 拍前协议】→【🏷️ 高频 Tag】"
 )
 
-PLATFORMS = ("闲鱼", "小红书店铺", "淘宝", "抖音电商")
 
-# 品类爆款范式：AI 依品类自动匹配对应圈子的爆款文案框架。
-_CATEGORY_FRAMEWORKS = {
-    "3C数码": "数码圈范式：强调一手自用/无拆无修、序列号与保修状态、关键配置参数如实标注、可验机",
-    "服饰鞋包": "穿搭圈范式：强调上身/穿搭场景、版型与尺码、成色（几成新）与穿着次数",
-    "潮玩二次元/非标周边": "潮玩圈范式：强调限量/联名、盒况与配件、保真/渠道、成色",
-    "图书教材/学术资料": "图书圈范式：强调版本与印次、笔记/划线成色、是否含光盘/赠品",
-    "美妆个护": "美妆圈范式：强调正品/渠道、保质期与开封状态、肤质适配、余量",
-    "家居日用/其他": "家居圈范式：强调成色、尺寸规格、适用场景、是否含配件",
-}
-
-
-def search_market_benchmarks(keyword: str, category: str, platform: str = "闲鱼") -> list[Benchmark]:
-    """全网对标检索：自动生成垂直搜索词，4 秒超时 + 全异常静默降级，失败返回空列表。"""
-    query = f"{keyword} {category} {platform} 爆款 文案 穿搭"
-    try:
-        from duckduckgo_search import DDGS  # 延迟导入：未安装/网络异常时静默降级
-        ddgs = DDGS(timeout=4)
-        raw = ddgs.text(query, max_results=3)
-    except Exception as exc:
-        logger.warning("全网对标检索已平滑降级：%s", exc)
-        return []
-
-    out: list[Benchmark] = []
-    for r in raw:
-        title = (r.get("title") or "").strip()
-        body = (r.get("body") or "").strip()
-        if title or body:
-            out.append(Benchmark(title=title, body=body))
-    return out[:3]
-
-
-def generate_listing(
-    category: str,
-    platform: str,
-    pricing: str,
-    facts: str,
-    flaws: str = "",
-    benchmarks: list[Benchmark] | None = None,
-) -> ListingPlan:
-    """生成爆款上架的 4 块结构化成果；无 DeepSeek 时降级为规则模板兜底。"""
-    benchmarks = benchmarks or []
+def generate_listing(facts: str, flaws: str, price: str, reference: str = "") -> ListingPlan:
+    """生成强结构化上架文案；无 DeepSeek 时降级为规则模板兜底。"""
     if llm:
         try:
-            return _generate_llm(category, platform, pricing, facts, flaws, benchmarks)
+            return _generate_llm(facts, flaws, price, reference)
         except Exception as exc:
-            logger.warning("售前文案 LLM 生成失败，降级为规则模板：%s", exc)
-    return _generate_rule(category, platform, pricing, facts, flaws)
+            logger.warning("上架文案 LLM 生成失败，降级为规则模板：%s", exc)
+    return _generate_rule(facts, flaws, price)
 
 
-def _generate_llm(category: str, platform: str, pricing: str, facts: str, flaws: str, benchmarks: list[Benchmark]) -> ListingPlan:
+def _generate_llm(facts: str, flaws: str, price: str, reference: str) -> ListingPlan:
     structured = llm.with_structured_output(ListingPlan, method="function_calling")
-    framework = _CATEGORY_FRAMEWORKS.get(category, "通用范式：如实呈现商品事实、成色与瑕疵")
 
-    bench_section = ""
-    if benchmarks:
-        lines = "\n".join(f"- {b.title}｜{b.body[:60]}" for b in benchmarks)
-        bench_section = f"【全网对标参考（仅供排版结构/促单语气/高频标签借鉴）】\n{lines}\n"
+    if reference.strip():
+        clone_rule = (
+            "用户提供了【同行参考文案】，处理流程：\n"
+            "1. 先提取其视觉排版骨架（分段小标题、Emoji 使用习惯、拍前免责声明结构）；\n"
+            "2. 彻底销毁参考文案中的具体尺码、颜色、瑕疵、价格等外部事实；\n"
+            "3. 把用户【输入区 A】的真实事实，像填空题一样精准填入提取出的骨架。\n"
+        )
+    else:
+        clone_rule = (
+            "用户未提供同行参考文案，强制套用高粉卖家的标准分模块模板：\n"
+            f"{_STANDARD_TEMPLATE}\n"
+        )
 
     prompt = (
-        "你是资深电商爆款上架与标签检索专家。请基于用户提供的客观事实，输出 4 块结构化成果。\n"
-        f"【品类爆款范式】{framework}。\n"
-        f"{bench_section}"
-        "【严格去幻觉（最高安全死命令）】网络对标结果仅供参考其排版结构、促单语气和高频标签；"
-        "商品的所有真实事实（尺码数值、瑕疵位置、成色、售价）必须 100% 严格来源于用户的原始输入，"
-        "严禁将检索到的外部尺码/价格拼接到输出中！\n"
-        "① titles：3 款爆款高点击标题——search=搜索型（堆品类/型号/成色关键词）、"
-        "transfer=诚心转让型（突出真实来源与诚信）、vibe=氛围型（营造使用场景与情绪氛围），每个标题 25 字以内。\n"
-        "② detail_copy：结构化吸睛详情页文案，按「核心事实 → 亮点/场景 → 诚信说明(含瑕疵) → 催促下单」组织，180 字左右，一段正文。\n"
-        "③ faqs：售前高频拦截 FAQ，写 3 组买家最常问的问题与高情商回复，针对该品类真实痛点，每条回答 60 字以内。\n"
-        "④ tags：精选 6~10 个去重的圈内真实高频搜索词（SEO 流量抓手），输出为短语列表。\n"
-        f"商品品类：{category}\n目标平台：{platform}\n期望售价/定价：{pricing}\n"
-        f"商品核心事实与规格：{facts or '（未提供）'}\n真实瑕疵与特殊说明：{flaws or '无'}\n"
+        "你是资深二手/闲置电商高粉卖家，擅长把零散事实改写成极具视觉排版感的上架文案。\n"
+        f"{clone_rule}"
+        "【反偷懒死命令】\n"
+        "1. 严禁输出连贯的普通段落！必须用清晰小标题（Emoji 开头）+ 列表分行 + 空行营造视觉呼吸感。\n"
+        "2. 严禁把用户原句仅改标点就输出！必须重新组织语序、拆成要点、补足促单语气。\n"
+        "3. 严格事实隔离：所有尺码数值、瑕疵位置、成色、价格必须 100% 来自用户输入，严禁无中生有。\n"
+        "【输出结构】\n"
+        "① titles：3 款高点击标题——search=搜索型、transfer=诚心转让型、vibe=氛围型，各 25 字内。\n"
+        "② detail_copy：正文务必用 Markdown 分模块排版（小标题 + 列表分行 + 空行），严禁大段连贯段落。\n"
+        "③ faqs：3 组售前拦截 FAQ，每条回答 60 字内。\n"
+        "④ tags：6~10 个去重高频搜索词。\n"
+        f"【我的商品真实档案】\n商品事实与版型：{facts}\n真实瑕疵与成色：{flaws or '无'}\n价格与交易方式：{price}\n"
+        f"【同行参考文案】\n{reference or '（未提供，套用标准模板）'}\n"
     )
     return structured.invoke(prompt)
 
 
-def _generate_rule(category: str, platform: str, pricing: str, facts: str, flaws: str) -> ListingPlan:
-    """无 LLM 时的模板兜底，保证页面始终有可复制的成果。"""
+def _generate_rule(facts: str, flaws: str, price: str) -> ListingPlan:
+    """无 LLM 时的规则模板兜底，输出标准分模块排版，保证页面始终可用。"""
     facts_text = (facts or "品质好物").strip()
-    flaw_note = f"（瑕疵已如实告知：{flaws}）" if flaws else ""
-    parts = [p.strip() for p in facts_text.replace("，", "、").replace(",", "、").split("、") if p.strip()]
+    flaws_text = flaws.strip()
+    price_text = price.strip() or "诚意价"
+    points = [p.strip() for p in facts_text.replace("，", "、").replace(",", "、").split("、") if p.strip()]
+    first = points[0] if points else facts_text
 
-    tags = [category] + parts[:3] + [pricing, "自用转卖", "诚心转让", "好价"]
-    tags = list(dict.fromkeys(tags))[:8]
+    tags = list(dict.fromkeys(points[:3] + [price_text, "自用转卖", "诚心转让"]))[:8]
+
+    lines = ["【📐 尺寸档案】"]
+    for p in (points or [facts_text]):
+        lines.append(f"- {p}")
+    lines += [
+        "",
+        "【👗 实穿亮点】",
+        f"- {first}，上身自然、日常好搭，细节质感在线",
+        "",
+        "【🔍 瑕疵诚信告知】",
+        f"- {flaws_text or '整体成色良好，无明显瑕疵'}",
+        "",
+        "【⚠️ 拍前协议】",
+        f"- 价格：{price_text}，可直拍/可小刀",
+        "- 二手闲置一般不退不换，拍前可看细节图，诚信第一",
+        "",
+        "【🏷️ 高频 Tag】",
+        " ".join(f"#{t}" for t in tags),
+    ]
+    detail_copy = "\n".join(lines)
 
     return ListingPlan(
         titles=TitleSet(
-            search=f"{category} {facts_text} {pricing} 自用转卖 好价",
-            transfer=f"诚心转让｜{category} {facts_text}，{flaws or '成色如图'}，{pricing}",
-            vibe=f"入手不亏的{category}，{facts_text}，{pricing}带走",
+            search=f"{facts_text} {price_text} 自用转卖 好价",
+            transfer=f"诚心转让｜{facts_text}，{flaws_text or '成色如图'}，{price_text}",
+            vibe=f"入手不亏的{facts_text}，{price_text}带走",
         ),
-        detail_copy=(
-            f"{category}，{facts_text}。{flaw_note}均为实拍实述、诚信告知，{pricing}好价。"
-            f"喜欢可小刀，拍下尽快发货，早买早享受。"
-        ),
+        detail_copy=detail_copy,
         faqs=[
             FaqItem(
-                question=f"是自用还是全新？{'有什么瑕疵吗？' if flaws else '成色如何？'}",
-                answer=f"亲，{facts_text}，{flaws or '成色如实'}，都是如实描述，需要细节图我再拍给您～",
+                question="尺寸 / 成色怎么样？",
+                answer=f"亲，{facts_text}；瑕疵情况：{flaws_text or '成色良好'}，均如实描述，可拍细节图～",
             ),
             FaqItem(
-                question="能不能便宜点 / 包邮吗？",
-                answer=f"亲，{pricing}已经是诚意价啦，诚心要可小刀，拍下尽快发货～",
+                question="能便宜点 / 包邮吗？",
+                answer=f"亲，{price_text}已是诚意价，诚心要可小刀，拍下尽快发货～",
             ),
             FaqItem(
-                question="支持验货 / 退换吗？",
-                answer="亲，如实描述、所见即所得，发货前会再确认；若与描述不符可沟通，诚信第一～",
+                question="支持退换吗？",
+                answer="亲，二手闲置一般不退不换，但如实描述、所见即所得，拍前可沟通清楚～",
             ),
         ],
         tags=tags,
